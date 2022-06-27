@@ -1,5 +1,6 @@
 ﻿using AuditFramework.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using WebApplication2.Attributes;
 
 namespace AuditFramework
@@ -13,11 +14,11 @@ namespace AuditFramework
             _dbContext = dbContext;
         }
 
-        AuditdbContext _auditDbContext=new AuditdbContext();
+        AuditdbContext _auditDbContext = new AuditdbContext();
 
         public void CreateAuditRecords()
         {
-            if(_dbContext.ChangeTracker.HasChanges())
+            if (_dbContext.ChangeTracker.HasChanges())
             {
                 _dbContext.ChangeTracker.DetectChanges();
                 var entries = _dbContext.ChangeTracker.Entries().AsEnumerable();
@@ -50,15 +51,36 @@ namespace AuditFramework
 
         }
 
-        private Audit GetAuditRecord(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry property)
+        private Audit GetAuditRecord(EntityEntry entry,PropertyEntry property)
         {
             Audit audit = new Audit();
-            audit.Updatedat = DateTime.Now;
-            audit.Actionname = entry.State.ToString();
-            audit.Tablename = entry.Entity.GetType().Name;
-            audit.Propertyname = property.Metadata.Name;
-            audit.Oldvalue = (entry.State == EntityState.Added) ? string.Empty : property.OriginalValue?.ToString();
+            audit.AuditId=Guid.NewGuid();
+            audit.EntityId = GetPrimaryKey(entry);
+            audit.EntityType = entry.Entity.GetType().Name;
+            audit.ActionName = entry.State.ToString();
+            audit.PropertyName = property.Metadata.Name;
+            audit.Oldvalue = (entry.State == EntityState.Added) ? "N/A" : property.OriginalValue?.ToString();
+            audit.NewValue = (entry.State == EntityState.Deleted) ? "N/A" : property.CurrentValue?.ToString();
+            audit.UpdatedAt = DateTime.Now;
+            audit.TransactionId = _dbContext.ContextId.InstanceId.ToString();
             return audit;
+        }
+
+        private string GetPrimaryKey(EntityEntry entry)
+        {
+            string pk = string.Empty;
+            var type = entry.Entity.GetType();
+            if (!entry.IsKeySet) return "N/A";
+
+            foreach (var property in _dbContext.Model.FindEntityType(type).FindPrimaryKey().Properties.ToList())
+
+            {
+                var propertyValue = property.PropertyInfo.GetValue(entry.Entity);
+                pk += string.Format("{0}={1};", property.Name, entry.Property(property.Name).CurrentValue);
+
+            }
+
+            return pk;
         }
 
         private bool IsAuditable(Type type)
